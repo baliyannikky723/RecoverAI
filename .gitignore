@@ -1,0 +1,30 @@
+# Java / Maven ignores
+backend/target/
+backend/*.db
+backend/*.log
+*.class
+*.jar
+*.war
+
+# Node / React ignores
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+frontend/.eslintcache
+
+# Environment and secrets
+.env
+.env.local
+*.env
+!.env.example
+
+# IDEs and System files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db
