@@ -12,6 +12,7 @@ import {
   RotateCcw
 } from 'lucide-react';
 import { useAuditLogs } from '@/hooks/useAuditLogs';
+import { auditApi } from '@/services/api/auditApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +25,7 @@ export const AuditLogPage: React.FC = () => {
   const [eventFilter, setEventFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const pageSize = 10;
 
   const {
@@ -99,39 +101,58 @@ export const AuditLogPage: React.FC = () => {
     }
   };
 
-  const handleExportCSV = () => {
-    if (logs.length === 0) {
-      setFeedbackMessage('No audit records available to export.');
-      setTimeout(() => setFeedbackMessage(null), 3000);
-      return;
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    setFeedbackMessage('Preparing full audit trail CSV export...');
+    try {
+      const response = await auditApi.getLogs({
+        search: searchTerm,
+        actor: actorFilter !== 'All' ? actorFilter : undefined,
+        event: eventFilter !== 'All' ? eventFilter : undefined,
+        page: 0,
+        size: 5000 // Query full matching list up to maximum allowed
+      });
+
+      const allLogs = response.content || [];
+      if (allLogs.length === 0) {
+        setFeedbackMessage('No audit records matching your criteria to export.');
+        setTimeout(() => setFeedbackMessage(null), 3000);
+        setIsExporting(false);
+        return;
+      }
+
+      const headers = ['Timestamp', 'Event Type', 'Actor', 'Decision', 'Action', 'Result', 'Reason', 'Transaction ID'];
+      const rows = allLogs.map((l: any) => [
+        `"${l.timestamp}"`,
+        `"${l.eventType}"`,
+        `"${l.actor}"`,
+        `"${l.decision || ''}"`,
+        `"${l.action || ''}"`,
+        `"${l.result || ''}"`,
+        `"${l.reason || ''}"`,
+        `"${l.transactionId || ''}"`
+      ]);
+
+      const csvContent =
+        'data:text/csv;charset=utf-8,' +
+        [headers.join(','), ...rows.map((e: any) => e.join(','))].join('\n');
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `recoverai_audit_trail_full_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setFeedbackMessage(`Success: Exported all ${allLogs.length} matching audit logs.`);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (e: any) {
+      setFeedbackMessage(`Error: Export failed. ${e.message || ''}`);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } finally {
+      setIsExporting(false);
     }
-
-    const headers = ['Timestamp', 'Event Type', 'Actor', 'Decision', 'Action', 'Result', 'Reason', 'Transaction ID'];
-    const rows = logs.map((l) => [
-      `"${l.timestamp}"`,
-      `"${l.eventType}"`,
-      `"${l.actor}"`,
-      `"${l.decision || ''}"`,
-      `"${l.action || ''}"`,
-      `"${l.result || ''}"`,
-      `"${l.reason || ''}"`,
-      `"${l.transactionId || ''}"`
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `recoverai_audit_trail_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setFeedbackMessage(`Exported ${logs.length} audit logs to CSV file.`);
-    setTimeout(() => setFeedbackMessage(null), 3500);
   };
 
   const handleResetFilters = () => {
@@ -161,12 +182,13 @@ export const AuditLogPage: React.FC = () => {
         <div className="flex items-center space-x-2">
           <Button
             onClick={handleExportCSV}
+            disabled={isExporting}
             variant="outline"
             size="sm"
-            className="text-xs h-9 border-slate-700 hover:bg-slate-800 text-slate-300 space-x-1.5"
+            className="text-xs h-9 border-slate-700 hover:bg-slate-800 text-slate-300 space-x-1.5 disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
-            <span>Export Trail</span>
+            <span>{isExporting ? 'Exporting...' : 'Export Trail'}</span>
           </Button>
 
           {hasActiveFilters && (

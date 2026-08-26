@@ -31,7 +31,7 @@ public class TransactionController {
             @RequestParam(required = false) RiskLevel risk,
             @RequestParam(required = false) FailureReason failureReason,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size
+            @RequestParam(defaultValue = "10") @Min(1) @Max(10000) int size
     ) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt"));
         PageResponse<TransactionSummaryDto> response = transactionService.getTransactions(

@@ -10,6 +10,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { useTransactions } from '@/hooks/useTransactions';
+import { transactionApi } from '@/services/api/transactionApi';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ export const TransactionsPage: React.FC = () => {
   const [reasonFilter, setReasonFilter] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const pageSize = 10;
 
   // Live TanStack Query hook with server-side filtering and pagination
@@ -108,60 +110,80 @@ export const TransactionsPage: React.FC = () => {
     setTimeout(() => setFeedbackMessage(null), 3500);
   };
 
-  const handleExportCSV = () => {
-    if (transactions.length === 0) {
-      setFeedbackMessage('No transactions available to export.');
-      setTimeout(() => setFeedbackMessage(null), 3000);
-      return;
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    setFeedbackMessage('Preparing full dataset CSV export...');
+    try {
+      const response = await transactionApi.getTransactions({
+        search: searchTerm,
+        status: statusFilter !== 'All' ? statusFilter : undefined,
+        risk: riskFilter !== 'All' ? riskFilter : undefined,
+        failureReason: reasonFilter !== 'All' ? reasonFilter : undefined,
+        page: 0,
+        size: 5000 // Query full matching list up to maximum allowed
+      });
+
+      const allTxns = response.content || [];
+      if (allTxns.length === 0) {
+        setFeedbackMessage('No transactions matching your criteria to export.');
+        setTimeout(() => setFeedbackMessage(null), 3000);
+        setIsExporting(false);
+        return;
+      }
+
+      const headers = [
+        'Transaction ID',
+        'Customer Name',
+        'Customer Email',
+        'Amount',
+        'Currency',
+        'Payment Method',
+        'Status',
+        'Failure Reason',
+        'Risk Level',
+        'Priority',
+        'Created At'
+      ];
+
+      const rows = allTxns.map((t) => [
+        `"${t.transactionId}"`,
+        `"${t.customerName}"`,
+        `"${t.customerEmail}"`,
+        t.amount,
+        `"${t.currency}"`,
+        `"${t.paymentMethod}"`,
+        `"${t.status}"`,
+        `"${t.failureReason}"`,
+        `"${t.riskLevel}"`,
+        `"${t.recoveryPriority}"`,
+        `"${t.createdAt}"`
+      ]);
+
+      const csvContent =
+        'data:text/csv;charset=utf-8,' +
+        [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute(
+        'download',
+        `recoverai_transactions_full_${new Date().toISOString().slice(0, 10)}.csv`
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setFeedbackMessage(
+        `Success: Exported all ${allTxns.length} matching transaction records.`
+      );
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (e: any) {
+      setFeedbackMessage(`Error: Export failed. ${e.message || ''}`);
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } finally {
+      setIsExporting(false);
     }
-
-    const headers = [
-      'Transaction ID',
-      'Customer Name',
-      'Customer Email',
-      'Amount',
-      'Currency',
-      'Payment Method',
-      'Status',
-      'Failure Reason',
-      'Risk Level',
-      'Priority',
-      'Created At'
-    ];
-
-    const rows = transactions.map((t) => [
-      `"${t.transactionId}"`,
-      `"${t.customerName}"`,
-      `"${t.customerEmail}"`,
-      t.amount,
-      `"${t.currency}"`,
-      `"${t.paymentMethod}"`,
-      `"${t.status}"`,
-      `"${t.failureReason}"`,
-      `"${t.riskLevel}"`,
-      `"${t.recoveryPriority}"`,
-      `"${t.createdAt}"`
-    ]);
-
-    const csvContent =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
-
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute(
-      'download',
-      `recoverai_transactions_${new Date().toISOString().slice(0, 10)}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    setFeedbackMessage(
-      `Exported ${transactions.length} transaction records to CSV file.`
-    );
-    setTimeout(() => setFeedbackMessage(null), 3500);
   };
 
   return (
@@ -180,12 +202,13 @@ export const TransactionsPage: React.FC = () => {
         <div className="flex items-center space-x-2">
           <Button
             onClick={handleExportCSV}
+            disabled={isExporting}
             variant="outline"
             size="sm"
-            className="text-xs h-9 border-slate-700 hover:bg-slate-800 text-slate-300 space-x-1.5"
+            className="text-xs h-9 border-slate-700 hover:bg-slate-800 text-slate-300 space-x-1.5 disabled:opacity-50"
           >
             <Download className="w-3.5 h-3.5 text-slate-400" />
-            <span>Export CSV</span>
+            <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
           </Button>
 
           {hasActiveFilters && (

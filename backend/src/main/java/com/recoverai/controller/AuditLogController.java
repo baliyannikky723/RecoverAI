@@ -29,7 +29,7 @@ public class AuditLogController {
             @RequestParam(required = false) String actor,
             @RequestParam(required = false) String event,
             @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size
+            @RequestParam(defaultValue = "10") @Min(1) @Max(10000) int size
     ) {
         PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
         PageResponse<AuditLogDto> response = auditLogService.getAuditLogs(search, actor, event, pageRequest);
