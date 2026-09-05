@@ -7,63 +7,133 @@ import {
   CheckCircle2,
   User,
   CreditCard,
-  History
+  History,
+  AlertTriangle
 } from 'lucide-react';
-import { useTransactionDetail } from '@/hooks/useTransactions';
+import { useTransactionDetail, useGenerateAiDecision, useExecuteStrategy } from '@/hooks/useTransactions';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { AiDecisionDto } from '@/types/api';
 
 export const TransactionDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { data: transaction, isLoading, isError, error, refetch } = useTransactionDetail(id);
+  const generateAiDecisionMutation = useGenerateAiDecision();
+  const executeStrategyMutation = useExecuteStrategy();
 
+  const [aiDecision, setAiDecision] = useState<AiDecisionDto | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [approvalFeedback, setApprovalFeedback] = useState<string | null>(null);
 
+  // Reset AI state when navigating to a different transaction
+  React.useEffect(() => {
+    setAiDecision(null);
+    setAiError(null);
+    setApprovalFeedback(null);
+  }, [id]);
+
+  // Auto-hydrate AI state from pending action when transaction data loads
+  React.useEffect(() => {
+    if (transaction && transaction.recoveryActions) {
+      const pending = transaction.recoveryActions.find(a => a.status === 'PENDING');
+      if (pending) {
+        setAiDecision({
+          action: pending.actionType,
+          confidence: pending.confidence,
+          reason: pending.reason,
+          expectedRecoveryAmount: pending.expectedRecoveryAmount,
+          retryAfterHours: 0, // Not stored in RecoveryAction, use default
+          riskLevel: transaction.riskLevel,
+          decisionId: pending.id,
+          transactionId: transaction.transactionId
+        });
+      }
+    }
+  }, [transaction]);
+
+  const handleGenerateAiDecision = () => {
+    setAiError(null);
+    generateAiDecisionMutation.mutate(id!, {
+      onSuccess: (data) => {
+        setAiDecision(data);
+        refetch(); // Invalidate and reload to fetch updated audit logs
+      },
+      onError: () => {
+        setAiError("AI decision engine is currently unavailable. The transaction remains unchanged.");
+      }
+    });
+  };
+
   const handleApprove = () => {
-    setApprovalFeedback('Action Approved: Recovery strategy is queued for simulation.');
-    setTimeout(() => setApprovalFeedback(null), 4000);
+    if (!id || !aiDecision) return;
+    executeStrategyMutation.mutate(
+      { id: id, decision: aiDecision },
+      {
+        onSuccess: () => {
+          setApprovalFeedback(`Strategy approved! Executing recovery pipeline action: ${formatActionType(aiDecision.action)}`);
+          setTimeout(() => setApprovalFeedback(null), 5000);
+        },
+        onError: (err: any) => {
+          setApprovalFeedback(`Error executing strategy: ${err.message}`);
+          setTimeout(() => setApprovalFeedback(null), 5000);
+        }
+      }
+    );
   };
 
   const handleReject = () => {
-    setApprovalFeedback('Action Rejected: Transaction moved to human review queue.');
-    setTimeout(() => setApprovalFeedback(null), 4000);
+    if (!id || !transaction) return;
+    const manualDecision: AiDecisionDto = {
+      action: 'ESCALATE_TO_HUMAN',
+      confidence: 1.0,
+      reason: 'Transaction manually rejected by Merchant Admin. Escalating to VIP support queue.',
+      expectedRecoveryAmount: transaction.amount,
+      retryAfterHours: 0,
+      riskLevel: 'HIGH',
+      transactionId: transaction.transactionId
+    };
+    executeStrategyMutation.mutate(
+      { id: id, decision: manualDecision },
+      {
+        onSuccess: () => {
+          setApprovalFeedback('Action Rejected: Transaction status escalated to VIP support queue.');
+          setTimeout(() => setApprovalFeedback(null), 5000);
+        },
+        onError: (err: any) => {
+          setApprovalFeedback(`Error rejecting strategy: ${err.message}`);
+          setTimeout(() => setApprovalFeedback(null), 5000);
+        }
+      }
+    );
   };
 
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case 'RECOVERED':
-      case 'Recovered':
-        return <Badge variant="success">Recovered</Badge>;
+        return <Badge variant="success">RECOVERED</Badge>;
       case 'AT_RISK':
-      case 'At Risk':
-        return <Badge variant="warning">At Risk</Badge>;
+        return <Badge variant="warning">AT_RISK</Badge>;
       case 'RECOVERING':
-      case 'Recovering':
-        return <Badge variant="info">Recovering</Badge>;
+        return <Badge variant="info">RECOVERING</Badge>;
       case 'FAILED':
-      case 'Failed':
-        return <Badge variant="destructive">Failed</Badge>;
+        return <Badge variant="destructive">FAILED</Badge>;
       case 'ESCALATED':
-      case 'Escalated':
-        return <Badge variant="purple">Escalated</Badge>;
+        return <Badge variant="purple">ESCALATED</Badge>;
       case 'STOPPED':
-      case 'Stopped':
-        return <Badge variant="neutral">Stopped</Badge>;
+        return <Badge variant="neutral">STOPPED</Badge>;
       default:
-        return <Badge variant="secondary">{status || 'Unknown'}</Badge>;
+        return <Badge variant="secondary">{status || 'UNKNOWN'}</Badge>;
     }
   };
 
   const getRiskBadge = (risk?: string) => {
     switch (risk) {
       case 'HIGH':
-      case 'High':
         return <Badge variant="destructive">High Risk</Badge>;
       case 'MEDIUM':
-      case 'Medium':
         return <Badge variant="warning">Medium</Badge>;
       default:
         return <Badge variant="success">Low</Badge>;
@@ -117,7 +187,12 @@ export const TransactionDetailPage: React.FC = () => {
     );
   }
 
-  const primaryAction = transaction.recoveryActions?.[0];
+  const hasBeenAnalyzed = aiDecision !== null;
+  const executedActions = transaction.recoveryActions?.filter(a => a.status === 'EXECUTED' || a.status === 'FAILED');
+  const hasExecutedAction = executedActions && executedActions.length > 0;
+  const latestExecutedAction = hasExecutedAction ? executedActions[0] : null;
+  const isRecovered = transaction.status === 'RECOVERED';
+  const actualRecoveredAmount = isRecovered ? transaction.amount : 0;
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -156,12 +231,48 @@ export const TransactionDetailPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-col sm:items-end">
-          <span className="text-xs text-slate-400 font-medium">Transaction Amount</span>
-          <span className="text-3xl font-extrabold font-mono text-white">
-            ₹{transaction.amount.toLocaleString()}
-          </span>
-          <span className="text-[11px] text-slate-500 font-mono">Currency: {transaction.currency}</span>
+        <div className="flex flex-col sm:items-end space-y-2">
+          <div className="flex flex-col items-end">
+            <span className="text-xs text-slate-400 font-medium">Transaction Amount</span>
+            <span className="text-3xl font-extrabold font-mono text-white">
+              ₹{transaction.amount.toLocaleString()}
+            </span>
+            <span className="text-[11px] text-slate-500 font-mono">Currency: {transaction.currency}</span>
+          </div>
+          
+          <Button 
+            onClick={() => {
+              fetch('/api/webhooks/razorpay', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  event: 'payment.failed',
+                  payload: {
+                    payment: {
+                      entity: {
+                        id: transaction.transactionId,
+                        amount: transaction.amount * 100, // INR in paise
+                        currency: transaction.currency,
+                        status: 'failed',
+                        error_code: 'BAD_REQUEST_ERROR',
+                        error_description: 'Payment failed due to simulated webhook'
+                      }
+                    }
+                  }
+                })
+              }).then(res => res.json())
+                .then(data => {
+                  setApprovalFeedback('Webhook Simulation Triggered Successfully!');
+                  setTimeout(() => setApprovalFeedback(null), 5000);
+                  refetch();
+                });
+            }}
+            size="sm" 
+            variant="outline" 
+            className="border-blue-500/50 text-blue-400 hover:bg-blue-500/10 text-[10px] h-7"
+          >
+            <Zap className="w-3 h-3 mr-1" /> Simulate Webhook
+          </Button>
         </div>
       </div>
 
@@ -172,7 +283,6 @@ export const TransactionDetailPage: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-blue-400" />
             <span>{approvalFeedback}</span>
           </div>
-          <span className="text-[10px] text-blue-400/70 uppercase tracking-widest font-mono">Read-Only Mode</span>
         </div>
       )}
 
@@ -192,13 +302,25 @@ export const TransactionDetailPage: React.FC = () => {
                   </div>
                   <div>
                     <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
-                      <span>AI Decision Recommendation</span>
-                      <Badge variant="purple" className="text-[10px] font-mono">
-                        Coming in Phase 4
-                      </Badge>
+                      <span>Transaction AI Analysis</span>
+                      {!hasBeenAnalyzed && !hasExecutedAction && (
+                        <Badge variant="neutral" className="text-[10px] font-mono">
+                          NOT_ANALYZED
+                        </Badge>
+                      )}
+                      {generateAiDecisionMutation.isPending && (
+                        <Badge variant="info" className="text-[10px] font-mono">
+                          ANALYZING
+                        </Badge>
+                      )}
+                      {hasBeenAnalyzed && !hasExecutedAction && (
+                        <Badge variant="purple" className="text-[10px] font-mono">
+                          ANALYZED
+                        </Badge>
+                      )}
                     </CardTitle>
                     <CardDescription className="text-xs text-slate-400">
-                      Recommended strategy generated based on decline code & customer LTV
+                      Transaction-level contextual recovery strategy and guardrail execution
                     </CardDescription>
                   </div>
                 </div>
@@ -206,64 +328,157 @@ export const TransactionDetailPage: React.FC = () => {
             </CardHeader>
 
             <CardContent className="space-y-5">
-              {/* Recommendation summary box */}
-              <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-slate-400">Strategy:</span>
-                    <strong className="text-xs font-semibold text-blue-400">
-                      {formatActionType(primaryAction?.actionType)}
-                    </strong>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-xs text-slate-400">Confidence:</span>
-                    <Badge variant="success" className="font-mono text-xs">
-                      {primaryAction?.confidence || 82}% Confidence
-                    </Badge>
+              {aiError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-300 text-xs">
+                  {aiError}
+                </div>
+              )}
+
+              {hasExecutedAction ? (
+                <div className="space-y-4 animate-in fade-in">
+                  <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-slate-400">Execution Status:</span>
+                        <strong className="text-xs font-semibold text-emerald-400 uppercase font-mono">
+                          {transaction.status}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-slate-900/60 rounded border border-slate-800/80 text-xs text-slate-300 space-y-2">
+                      <div>
+                        <span className="text-slate-400 block mb-0.5 font-medium">Executed Action Type:</span>
+                        <strong className="text-blue-400 font-mono text-xs block">
+                          {formatActionType(latestExecutedAction?.actionType)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block mb-0.5 font-medium">Reasoning & Outcome:</span>
+                        <p className="leading-relaxed text-slate-300">{latestExecutedAction?.reason}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs pt-2">
+                      <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 border-l-4 border-l-blue-500">
+                        <span className="text-slate-500 block mb-1">Expected Recovery (AI)</span>
+                        <span className="font-mono font-semibold text-blue-400 text-sm">
+                          ₹{latestExecutedAction?.expectedRecoveryAmount?.toLocaleString() || '0'}
+                        </span>
+                      </div>
+                      <div className={`p-3 bg-slate-900 rounded-lg border border-slate-800 border-l-4 ${isRecovered ? 'border-l-emerald-500' : 'border-l-slate-600'}`}>
+                        <span className="text-slate-500 block mb-1">Actual Recovered</span>
+                        <span className={`font-mono font-semibold text-sm ${isRecovered ? 'text-emerald-400' : 'text-slate-400'}`}>
+                          ₹{actualRecoveredAmount.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="pt-2 text-right">
+                       <span className="text-slate-500 block text-[10px] font-mono">
+                          Executed At: {new Date(latestExecutedAction?.executedAt || latestExecutedAction?.createdAt || new Date()).toLocaleString()}
+                        </span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="p-3 bg-slate-900/60 rounded border border-slate-800/80 text-xs text-slate-300">
-                  <span className="text-slate-400 block mb-1 font-medium">Strategic Reasoning:</span>
-                  {primaryAction?.reason || 'Soft decline pattern detected. Expected recovery rate improves significantly within the optimal time window.'}
+              ) : generateAiDecisionMutation.isPending ? (
+                <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-10 flex flex-col items-center justify-center space-y-4">
+                  <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm font-medium text-slate-300">Analyzing transaction context...</span>
                 </div>
+              ) : hasBeenAnalyzed ? (
+                <div className="space-y-4 animate-in fade-in">
+                  <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-4 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-slate-400">Recommended Action:</span>
+                        <strong className="text-xs font-semibold text-blue-400 font-mono">
+                          {formatActionType(aiDecision.action)}
+                        </strong>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs text-slate-400">Confidence:</span>
+                        <Badge variant={aiDecision.confidence >= 0.55 ? "success" : "warning"} className="font-mono text-xs">
+                          {Math.round(aiDecision.confidence * 100)}%
+                        </Badge>
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3 text-xs pt-1">
-                  <div>
-                    <span className="text-slate-500 block">Expected Recovery</span>
-                    <span className="font-mono font-semibold text-emerald-400">
-                      ₹{primaryAction?.expectedRecoveryAmount?.toLocaleString() || transaction.amount.toLocaleString()}
-                    </span>
+                    <div className="p-3 bg-slate-900/60 rounded border border-slate-800/80 text-xs text-slate-300">
+                      <span className="text-slate-400 block mb-1 font-medium">Strategic Reasoning:</span>
+                      {aiDecision.reason}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs pt-1 border-b border-slate-800 pb-3">
+                      <div>
+                        <span className="text-slate-500 block">Expected Recovery</span>
+                        <span className="font-mono font-semibold text-blue-400">
+                          ₹{aiDecision.expectedRecoveryAmount.toLocaleString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Optimal Execution Window</span>
+                        <span className="font-mono text-slate-300">
+                          {aiDecision.retryAfterHours > 0
+                            ? `+${aiDecision.retryAfterHours} Hours`
+                            : 'Immediate Action'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 pt-1">
+                      <span className="text-xs text-slate-400 font-medium">Guardrail Policy Status:</span>
+                      {aiDecision.guardrailRejected ? (
+                        <div className="flex items-center space-x-1.5 text-red-400 bg-red-500/10 px-2 py-1 rounded border border-red-500/20">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                          <span className="text-[11px] font-bold tracking-wide">REJECTED / OVERRIDDEN</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-1.5 text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span className="text-[11px] font-bold tracking-wide">APPROVED</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-500 block">Optimal Execution Window</span>
-                    <span className="font-mono text-slate-300">+24 Hours (Next Day 10:30 AM)</span>
+
+                  {/* Action Approval Controls */}
+                  <div className="flex items-center space-x-3 pt-2">
+                    <Button
+                      onClick={handleApprove}
+                      className="bg-blue-600 hover:bg-blue-500 text-white text-xs h-9 space-x-1.5 w-full sm:w-auto px-6"
+                      disabled={executeStrategyMutation.isPending}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{executeStrategyMutation.isPending ? 'Executing...' : 'Approve Strategy'}</span>
+                    </Button>
+                    <Button
+                      onClick={handleReject}
+                      variant="outline"
+                      className="border-slate-700 hover:bg-slate-800 text-slate-300 text-xs h-9 w-full sm:w-auto px-6"
+                      disabled={executeStrategyMutation.isPending}
+                    >
+                      <span>Reject & Escalate</span>
+                    </Button>
                   </div>
                 </div>
-              </div>
-
-              {/* Action Approval Controls (Read-Only) */}
-              <div className="flex items-center justify-between pt-2">
-                <div className="flex items-center space-x-2">
+              ) : (
+                <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-10 flex flex-col items-center justify-center space-y-4">
+                  <p className="text-sm font-medium text-slate-300 text-center">
+                    AI analysis has not been run yet.
+                  </p>
+                  <p className="text-xs text-slate-500 text-center max-w-sm pb-2">
+                    Run the engine to extract context from failure reasons, LTV, and historical attempts to recommend the optimal recovery strategy.
+                  </p>
                   <Button
-                    onClick={handleApprove}
-                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs h-9 space-x-1.5"
+                    onClick={handleGenerateAiDecision}
+                    className="bg-blue-600 hover:bg-blue-500 text-white text-xs space-x-1.5 px-6 h-10 shadow-lg shadow-blue-500/20"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Approve Strategy</span>
-                  </Button>
-                  <Button
-                    onClick={handleReject}
-                    variant="outline"
-                    className="border-slate-700 hover:bg-slate-800 text-slate-300 text-xs h-9"
-                  >
-                    <span>Reject / Manual</span>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span className="font-semibold tracking-wide">Analyze with RecoverAI</span>
                   </Button>
                 </div>
-                <span className="text-[11px] text-slate-500 italic">
-                  Autonomous execution inactive
-                </span>
-              </div>
+              )}
             </CardContent>
           </Card>
 
