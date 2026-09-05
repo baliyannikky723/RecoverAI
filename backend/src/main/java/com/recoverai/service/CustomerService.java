@@ -65,6 +65,9 @@ public class CustomerService {
     }
 
     private TransactionSummaryDto mapToTransactionSummary(Transaction t) {
+        boolean hasPending = t.getRecoveryActions() != null && t.getRecoveryActions().stream()
+                .anyMatch(a -> a.getStatus() == com.recoverai.entity.enums.RecoveryActionStatus.PENDING);
+
         return TransactionSummaryDto.builder()
                 .id(t.getId())
                 .transactionId(t.getTransactionId())
@@ -78,6 +81,7 @@ public class CustomerService {
                 .failureReason(t.getFailureReason())
                 .riskLevel(t.getRiskLevel())
                 .recoveryPriority(t.getRecoveryPriority())
+                .aiReviewReady(hasPending)
                 .createdAt(t.getCreatedAt())
                 .updatedAt(t.getUpdatedAt())
                 .build();
