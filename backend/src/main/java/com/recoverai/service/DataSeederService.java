@@ -176,24 +176,28 @@ public class DataSeederService implements CommandLineRunner {
             }
 
             // Recovery Action
+            boolean seedAction = (status != TransactionStatus.AT_RISK && status != TransactionStatus.FAILED);
             RecoveryActionType actionType = actionTypes[random.nextInt(actionTypes.length)];
-            RecoveryActionStatus actionStatus = actionStatuses[random.nextInt(actionStatuses.length)];
-            double confidence = BigDecimal.valueOf(random.nextDouble(55, 96)).setScale(1, RoundingMode.HALF_UP).doubleValue();
-            BigDecimal expectedRecovery = amount.multiply(BigDecimal.valueOf(confidence / 100.0)).setScale(2, RoundingMode.HALF_UP);
+            
+            if (seedAction) {
+                RecoveryActionStatus actionStatus = actionStatuses[random.nextInt(actionStatuses.length)];
+                double confidence = BigDecimal.valueOf(random.nextDouble(55, 96)).setScale(1, RoundingMode.HALF_UP).doubleValue();
+                BigDecimal expectedRecovery = amount.multiply(BigDecimal.valueOf(confidence / 100.0)).setScale(2, RoundingMode.HALF_UP);
 
-            RecoveryAction action = RecoveryAction.builder()
-                    .id(UUID.randomUUID().toString())
-                    .transaction(txn)
-                    .actionType(actionType)
-                    .confidence(confidence)
-                    .expectedRecoveryAmount(expectedRecovery)
-                    .status(actionStatus)
-                    .reason(generateActionReason(actionType, reason))
-                    .createdAt(txnCreatedAt.plus(1, ChronoUnit.HOURS))
-                    .executedAt(actionStatus == RecoveryActionStatus.EXECUTED ? txnCreatedAt.plus(6, ChronoUnit.HOURS) : null)
-                    .build();
+                RecoveryAction action = RecoveryAction.builder()
+                        .id(UUID.randomUUID().toString())
+                        .transaction(txn)
+                        .actionType(actionType)
+                        .confidence(confidence)
+                        .expectedRecoveryAmount(expectedRecovery)
+                        .status(actionStatus)
+                        .reason(generateActionReason(actionType, reason))
+                        .createdAt(txnCreatedAt.plus(1, ChronoUnit.HOURS))
+                        .executedAt(actionStatus == RecoveryActionStatus.EXECUTED ? txnCreatedAt.plus(6, ChronoUnit.HOURS) : null)
+                        .build();
 
-            recoveryActions.add(action);
+                recoveryActions.add(action);
+            }
 
             // Audit Logs
             AuditLog auditLog1 = AuditLog.builder()
@@ -207,21 +211,22 @@ public class DataSeederService implements CommandLineRunner {
                     .reason(reason.name())
                     .timestamp(txnCreatedAt)
                     .build();
-
-            AuditLog auditLog2 = AuditLog.builder()
-                    .id(UUID.randomUUID().toString())
-                    .transaction(txn)
-                    .eventType("Recovery Planned")
-                    .actor("DECISION_ENGINE")
-                    .decision(actionType.name())
-                    .action("Generated recovery recommendation")
-                    .result(actionStatus.name())
-                    .reason("Confidence: " + confidence + "% | Priority: " + priority.name())
-                    .timestamp(txnCreatedAt.plus(30, ChronoUnit.MINUTES))
-                    .build();
-
             auditLogs.add(auditLog1);
-            auditLogs.add(auditLog2);
+
+            if (seedAction) {
+                AuditLog auditLog2 = AuditLog.builder()
+                        .id(UUID.randomUUID().toString())
+                        .transaction(txn)
+                        .eventType("Recovery Planned")
+                        .actor("DECISION_ENGINE")
+                        .decision(actionType.name())
+                        .action("Generated recovery recommendation")
+                        .result("PLANNED")
+                        .reason("Confidence: 85% | Priority: " + priority.name())
+                        .timestamp(txnCreatedAt.plus(30, ChronoUnit.MINUTES))
+                        .build();
+                auditLogs.add(auditLog2);
+            }
         }
 
         transactionRepository.saveAll(transactions);
