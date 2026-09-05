@@ -29,6 +29,7 @@ public class TransactionSummaryDto {
     private FailureReason failureReason;
     private RiskLevel riskLevel;
     private RecoveryPriority recoveryPriority;
+    private Boolean aiReviewReady;
     private Instant createdAt;
     private Instant updatedAt;
 }
