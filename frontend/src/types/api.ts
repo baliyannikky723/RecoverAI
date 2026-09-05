@@ -108,6 +108,7 @@ export interface TransactionSummaryDto {
   failureReason: FailureReasonEnum;
   riskLevel: RiskLevelEnum;
   recoveryPriority: RecoveryPriorityEnum;
+  aiReviewReady?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -172,3 +173,51 @@ export interface RecoveryComparisonDto {
   netGain: number;
   additionalRecoveredInvoices: number;
 }
+
+export interface RecoveryPerformanceDto {
+  revenueAtRisk: number;
+  revenueRecovered: number;
+  recoveryRate: number;
+  totalRecoveredTransactions: number;
+  totalFailedRecoveries: number;
+  totalRetries: number;
+  totalPaymentLinkRecoveries: number;
+  totalMethodUpdateRecoveries: number;
+  totalHumanEscalations: number;
+  totalStoppedRecoveries: number;
+  averageRecoveryAttempts: number;
+  averageRecoveryTimeHours: number;
+  totalInvoices: number;
+}
+
+export interface AiVsBaselineComparisonDto {
+  baselineRecoveredRevenue: number;
+  aiRecoveredRevenue: number;
+  baselineRecoveryRate: number;
+  aiRecoveryRate: number;
+  aiUpliftPercentage: number;
+  baselineAttempts: number;
+  aiAttempts: number;
+  baselineEscalations: number;
+  aiEscalations: number;
+  baselineStopped: number;
+  aiStopped: number;
+  totalEvaluatedTransactions: number;
+  totalEvaluatedVolume: number;
+  netGain: number;
+  additionalRecoveredInvoices: number;
+}
+
+export interface AiDecisionDto {
+  action: RecoveryActionTypeEnum;
+  confidence: number;
+  reason: string;
+  expectedRecoveryAmount: number;
+  retryAfterHours: number;
+  riskLevel: RiskLevelEnum;
+  decisionId?: string;
+  transactionId?: string;
+  generatedAt?: string;
+  guardrailRejected?: boolean;
+}
+
