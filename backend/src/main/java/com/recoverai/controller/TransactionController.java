@@ -45,4 +45,13 @@ public class TransactionController {
         TransactionDetailDto detail = transactionService.getTransactionById(id);
         return ResponseEntity.ok(detail);
     }
+
+    @PostMapping("/{id}/execute-strategy")
+    public ResponseEntity<TransactionDetailDto> executeStrategy(
+            @PathVariable String id,
+            @RequestBody com.recoverai.dto.AIRecoveryDecision decision
+    ) {
+        TransactionDetailDto updated = transactionService.executeStrategy(id, decision);
+        return ResponseEntity.ok(updated);
+    }
 }
