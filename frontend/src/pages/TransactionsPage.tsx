@@ -7,7 +7,8 @@ import {
   Eye,
   Download,
   RotateCcw,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
 import { useTransactions } from '@/hooks/useTransactions';
 import { transactionApi } from '@/services/api/transactionApi';
@@ -16,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { cn } from '@/lib/utils';
 
 export const TransactionsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,7 +55,15 @@ export const TransactionsPage: React.FC = () => {
     riskFilter !== 'All' ||
     reasonFilter !== 'All';
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, aiReviewReady?: boolean) => {
+    if (aiReviewReady) {
+      return (
+        <Badge variant="info" className="border-cyan-500/40 bg-cyan-500/10 text-cyan-300 font-medium inline-flex items-center gap-1">
+          <Sparkles className="w-3 h-3 text-cyan-400" />
+          AI Review Ready
+        </Badge>
+      );
+    }
     switch (status) {
       case 'RECOVERED':
       case 'Recovered':
@@ -360,7 +370,12 @@ export const TransactionsPage: React.FC = () => {
                     className="hover:bg-slate-800/40 transition-colors group"
                   >
                     <td className="py-3.5 px-4 font-mono font-medium text-slate-200">
-                      {txn.transactionId}
+                      <Link
+                        to={`/transactions/${txn.transactionId}`}
+                        className="hover:text-blue-400 transition-colors"
+                      >
+                        {txn.transactionId}
+                      </Link>
                     </td>
                     <td className="py-3.5 px-4">
                       <div>
@@ -385,15 +400,31 @@ export const TransactionsPage: React.FC = () => {
                       {getRiskBadge(txn.riskLevel)}
                     </td>
                     <td className="py-3.5 px-4">
-                      {getStatusBadge(txn.status)}
+                      <Link to={`/transactions/${txn.transactionId}`}>
+                        {getStatusBadge(txn.status, txn.aiReviewReady)}
+                      </Link>
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <Link
                         to={`/transactions/${txn.transactionId}`}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-700 text-blue-400 text-xs font-medium transition-colors"
+                        className={cn(
+                          "inline-flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                          txn.aiReviewReady
+                            ? "bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30"
+                            : "bg-slate-800/80 hover:bg-slate-700 text-blue-400"
+                        )}
                       >
-                        <Eye className="w-3 h-3" />
-                        <span>Review</span>
+                        {txn.aiReviewReady ? (
+                          <>
+                            <Sparkles className="w-3 h-3 text-cyan-400" />
+                            <span>Review AI</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-3 h-3" />
+                            <span>Review</span>
+                          </>
+                        )}
                       </Link>
                     </td>
                   </tr>
