@@ -35,4 +35,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
 
     @Query("SELECT t FROM Transaction t WHERE t.status IN ('AT_RISK', 'FAILED') ORDER BY t.amount DESC")
     List<Transaction> findTopAtRiskTransactions(Pageable pageable);
+
+    @Query("SELECT t FROM Transaction t LEFT JOIN t.recoveryActions a WHERE t.status IN ('FAILED', 'AT_RISK') AND a.id IS NULL ORDER BY t.createdAt ASC")
+    List<Transaction> findUnprocessedFailedTransactions(Pageable pageable);
 }
