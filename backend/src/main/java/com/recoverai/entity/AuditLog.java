@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -40,6 +41,21 @@ public class AuditLog {
 
     @Column(columnDefinition = "TEXT")
     private String reason;
+
+    @Column(name = "confidence")
+    private Double confidence;
+
+    @Column(name = "expected_recovery_amount", precision = 14, scale = 2)
+    private BigDecimal expectedRecoveryAmount;
+
+    @Column(name = "retry_after_hours")
+    private Integer retryAfterHours;
+
+    @Column(name = "risk_level", length = 20)
+    private String riskLevel;
+
+    @Column(name = "provider", length = 50)
+    private String provider;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
