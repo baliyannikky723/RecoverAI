@@ -18,6 +18,8 @@ public interface RecoveryActionRepository extends JpaRepository<RecoveryAction, 
 
     List<RecoveryAction> findByTransactionIdOrderByCreatedAtDesc(String transactionId);
 
+    long countByActionType(RecoveryActionType actionType);
+
     @Query("SELECT r.actionType, COUNT(r), COALESCE(SUM(r.expectedRecoveryAmount), 0) FROM RecoveryAction r GROUP BY r.actionType")
     List<Object[]> countAndSumGroupedByActionType();
 }
