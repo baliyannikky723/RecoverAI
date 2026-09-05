@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { PageResponse, TransactionSummaryDto, TransactionDetailDto } from '@/types/api';
+import { PageResponse, TransactionSummaryDto, TransactionDetailDto, AiDecisionDto } from '@/types/api';
 
 export interface GetTransactionsParams {
   search?: string;
@@ -28,6 +28,16 @@ export const transactionApi = {
 
   getTransactionById: async (id: string): Promise<TransactionDetailDto> => {
     const response = await apiClient.get<TransactionDetailDto>(`/api/transactions/${id}`);
+    return response.data;
+  },
+
+  generateAiDecision: async (id: string): Promise<AiDecisionDto> => {
+    const response = await apiClient.post<AiDecisionDto>(`/api/transactions/${id}/ai-decision`);
+    return response.data;
+  },
+
+  executeStrategy: async (id: string, decision: AiDecisionDto): Promise<TransactionDetailDto> => {
+    const response = await apiClient.post<TransactionDetailDto>(`/api/transactions/${id}/execute-strategy`, decision);
     return response.data;
   },
 };
